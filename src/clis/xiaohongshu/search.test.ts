@@ -39,8 +39,8 @@ describe('xiaohongshu search', () => {
     expect(cmd?.func).toBeTypeOf('function');
 
     const page = createPageMock([
-      // First evaluate: early login-wall check (returns true)
-      true,
+      // First evaluate: MutationObserver wait (login wall detected)
+      'login_wall',
     ]);
 
     await expect(cmd!.func!(page, { query: '特斯拉', limit: 5 })).rejects.toThrow(
@@ -61,21 +61,18 @@ describe('xiaohongshu search', () => {
       'https://www.xiaohongshu.com/user/profile/635a9c720000000018028b40?xsec_token=user-token&xsec_source=pc_search';
 
     const page = createPageMock([
-      // First evaluate: early login-wall check (returns false → no wall)
-      false,
-      // Second evaluate: main DOM extraction
-      {
-        loginWall: false,
-        results: [
-          {
-            title: '某鱼买FSD被坑了4万',
-            author: '随风',
-            likes: '261',
-            url: detailUrl,
-            author_url: authorUrl,
-          },
-        ],
-      },
+      // First evaluate: MutationObserver wait (content appeared)
+      'content',
+      // Second evaluate: main DOM extraction (returns array directly)
+      [
+        {
+          title: '某鱼买FSD被坑了4万',
+          author: '随风',
+          likes: '261',
+          url: detailUrl,
+          author_url: authorUrl,
+        },
+      ],
     ]);
 
     const result = await cmd!.func!(page, { query: '特斯拉', limit: 1 });
@@ -101,35 +98,32 @@ describe('xiaohongshu search', () => {
     expect(cmd?.func).toBeTypeOf('function');
 
     const page = createPageMock([
-      // First evaluate: early login-wall check (returns false → no wall)
-      false,
-      // Second evaluate: main DOM extraction
-      {
-        loginWall: false,
-        results: [
-          {
-            title: 'Result A',
-            author: 'UserA',
-            likes: '10',
-            url: 'https://www.xiaohongshu.com/search_result/aaa',
-            author_url: '',
-          },
-          {
-            title: '',
-            author: 'UserB',
-            likes: '5',
-            url: 'https://www.xiaohongshu.com/search_result/bbb',
-            author_url: '',
-          },
-          {
-            title: 'Result C',
-            author: 'UserC',
-            likes: '3',
-            url: 'https://www.xiaohongshu.com/search_result/ccc',
-            author_url: '',
-          },
-        ],
-      },
+      // First evaluate: MutationObserver wait (content appeared)
+      'content',
+      // Second evaluate: main DOM extraction (returns array directly)
+      [
+        {
+          title: 'Result A',
+          author: 'UserA',
+          likes: '10',
+          url: 'https://www.xiaohongshu.com/search_result/aaa',
+          author_url: '',
+        },
+        {
+          title: '',
+          author: 'UserB',
+          likes: '5',
+          url: 'https://www.xiaohongshu.com/search_result/bbb',
+          author_url: '',
+        },
+        {
+          title: 'Result C',
+          author: 'UserC',
+          likes: '3',
+          url: 'https://www.xiaohongshu.com/search_result/ccc',
+          author_url: '',
+        },
+      ],
     ]);
 
     const result = (await cmd!.func!(page, { query: '测试', limit: 1 })) as any[];
@@ -139,34 +133,23 @@ describe('xiaohongshu search', () => {
     expect(result[0]).toMatchObject({ rank: 1, title: 'Result A' });
   });
 
-  it('retries once when the first pass returns empty results', async () => {
+  it('waits for content via MutationObserver before extracting', async () => {
     const cmd = getRegistry().get('xiaohongshu/search');
     expect(cmd?.func).toBeTypeOf('function');
 
     const page = createPageMock([
-      // First pass: login check + empty extraction
-      false,
-      { loginWall: false, results: [] },
-      // Retry pass: login check + non-empty extraction
-      false,
-      {
-        loginWall: false,
-        results: [
-          {
-            title: 'Retry Result',
-            author: 'UserR',
-            likes: '9',
-            url: 'https://www.xiaohongshu.com/search_result/69b739f00000000000000000',
-            author_url: '',
-          },
-        ],
-      },
+      // First evaluate: MutationObserver wait (content appeared)
+      'content',
+      // Second evaluate: extraction (returns empty array)
+      [],
     ]);
 
-    const result = (await cmd!.func!(page, { query: '测试重试', limit: 5 })) as any[];
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ title: 'Retry Result' });
-    expect(page.goto).toHaveBeenCalledTimes(2);
+    const result = (await cmd!.func!(page, { query: '测试等待', limit: 5 })) as any[];
+    expect(result).toHaveLength(0);
+    // Only one navigation, no retry
+    expect(page.goto).toHaveBeenCalledTimes(1);
+    // Two evaluate calls: wait + extraction
+    expect(page.evaluate).toHaveBeenCalledTimes(2);
   });
 });
 
